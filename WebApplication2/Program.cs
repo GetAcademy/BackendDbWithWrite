@@ -5,11 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 app.UseHttpsRedirection();
 
-var appDir = AppContext.BaseDirectory;
-Console.WriteLine(appDir);
-var dbPath = Path.Combine(appDir, "data/app.db");
-
-var connectionString = $"Data Source={dbPath}";
+var connectionString = "Data Source=bin/Debug/net10.0/data/app.db";
 
 EnsureCounterTables(connectionString);
 
@@ -32,7 +28,7 @@ app.MapPost("/counter/increment", async (CounterIncrement input) =>
     var next = current + 1;
 
     // 3) Bevisst pause for å gjøre overlap lett å få til
-    await Task.Delay(250);
+    await Task.Delay(2000);
 
     // 4) Lagre historikk (hvem -> hvilken verdi)
     await connection.ExecuteAsync(@"
@@ -71,6 +67,8 @@ app.MapGet("/counter", async () =>
 
     return Results.Ok(new { value, history });
 });
+
+app.Run();
 
 void EnsureCounterTables(string connectionString)
 {

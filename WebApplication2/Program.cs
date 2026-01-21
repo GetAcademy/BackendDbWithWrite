@@ -1,62 +1,101 @@
-using Dapper;
+﻿using Dapper;
 using Microsoft.Data.Sqlite;
 
 var builder = WebApplication.CreateBuilder(args);
 var app = builder.Build();
 app.UseHttpsRedirection();
 
-//var dataDir = Path.Combine(builder.Environment.ContentRootPath, "data");
-//var dbPath = Path.Combine(dataDir, "app.db");
+var appDir = AppContext.BaseDirectory;
+Console.WriteLine(appDir);
+var dbPath = Path.Combine(appDir, "data/app.db");
 
-var connectionString = "Data Source=bin/Debug/net10.0/data/app.db";
+var connectionString = $"Data Source={dbPath}";
 
-using var connection = new SqliteConnection(connectionString);
-var sql = @"
-CREATE TABLE IF NOT EXISTS notes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  title TEXT NOT NULL,
-  body TEXT NOT NULL,
-  createdUtc TEXT NOT NULL
-);
-";
-await connection.ExecuteAsync(sql);
+EnsureCounterTables(connectionString);
 
-app.MapGet("/notes", async () =>
+
+// POST /counter/increment
+// Naiv logikk: les -> +1 -> vent -> skriv
+app.MapPost("/counter/increment", async (CounterIncrement input) =>
 {
-    using var connection = new SqliteConnection(connectionString);
-    var sql = "SELECT id, title, body, createdUtc FROM notes ORDER BY id";
-    var notes = await connection.QueryAsync<Note>(sql);
-    return Results.Ok(notes);
-});
-
-app.MapPost("/notes", async (Note input) =>
-{
-    if (!IsValid(input))
-        return Results.BadRequest("Ugyldig input");
+    if (string.IsNullOrWhiteSpace(input.who))
+        return Results.BadRequest("who kan ikke være tom");
 
     using var connection = new SqliteConnection(connectionString);
-    var createdUtc = DateTime.UtcNow.ToString("O"); // ISO-8601
-    var sql = @"INSERT INTO notes (title, body, createdUtc)
-                VALUES (@Title, @Body, @CreatedUtc);
-                SELECT last_insert_rowid();";
 
-    var id = await connection.ExecuteScalarAsync<long>(sql, new
+    // 1) Les nåværende verdi
+    var current = await connection.ExecuteScalarAsync<long>(
+        "SELECT value FROM counter WHERE id = 1;"
+    );
+
+    // 2) Regn ut ny verdi
+    var next = current + 1;
+
+    // 3) Bevisst pause for å gjøre overlap lett å få til
+    await Task.Delay(250);
+
+    // 4) Lagre historikk (hvem -> hvilken verdi)
+    await connection.ExecuteAsync(@"
+        INSERT INTO counter_history (who, value, createdUtc)
+        VALUES (@who, @value, @createdUtc);
+    ", new
     {
-        input.Title,
-        input.Body,
-        CreatedUtc = createdUtc
+        who = input.who,
+        value = next,
+        createdUtc = DateTime.UtcNow.ToString("O")
     });
 
-    return Results.Created($"/notes/{id}", new { id });
+    // 5) Oppdater telleren (lost update kan skje her)
+    await connection.ExecuteAsync(@"
+        UPDATE counter SET value = @value WHERE id = 1;
+    ", new { value = next });
+
+    return Results.Ok(new { value = next });
 });
 
-app.Run();
-
-bool IsValid(Note note)
+// (Valgfritt, men veldig nyttig i timen) – se status + siste historikk
+app.MapGet("/counter", async () =>
 {
-    return !string.IsNullOrWhiteSpace(note.Title)
-           && !string.IsNullOrWhiteSpace(note.Body);
+    using var connection = new SqliteConnection(connectionString);
+
+    var value = await connection.ExecuteScalarAsync<long>(
+        "SELECT value FROM counter WHERE id = 1;"
+    );
+
+    var history = (await connection.QueryAsync(@"
+        SELECT who, value, createdUtc
+        FROM counter_history
+        ORDER BY id DESC
+        LIMIT 20;
+    ")).ToList();
+
+    return Results.Ok(new { value, history });
+});
+
+void EnsureCounterTables(string connectionString)
+{
+    using var connection = new SqliteConnection(connectionString);
+
+    connection.Execute(@"
+        CREATE TABLE IF NOT EXISTS counter (
+            id INTEGER PRIMARY KEY,
+            value INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS counter_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            who TEXT NOT NULL,
+            value INTEGER NOT NULL,
+            createdUtc TEXT NOT NULL
+        );
+    ");
+
+    // Sørg for at telleren har én rad
+    connection.Execute(@"
+        INSERT INTO counter (id, value)
+        SELECT 1, 0
+        WHERE NOT EXISTS (SELECT 1 FROM counter WHERE id = 1);
+    ");
 }
 
-record Note(long Id, string Title, string Body, string CreatedUtc);
-
+record CounterIncrement(string who);

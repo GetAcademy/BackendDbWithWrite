@@ -10,7 +10,7 @@ Accept: application/json
 Content-type: application/json
 
 {
-    "title": "Enda en note",
+    "title": "      ",
     "body": "Ny tekst",
     "createdUtc": "2026-01-20T12:00:00Z"
 }

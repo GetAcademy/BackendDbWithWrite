@@ -31,6 +31,9 @@ app.MapGet("/notes", async () =>
 
 app.MapPost("/notes", async (Note input) =>
 {
+    if (!IsValid(input))
+        return Results.BadRequest("Ugyldig input");
+
     using var connection = new SqliteConnection(connectionString);
     var createdUtc = DateTime.UtcNow.ToString("O"); // ISO-8601
     var sql = @"INSERT INTO notes (title, body, createdUtc)
@@ -49,27 +52,11 @@ app.MapPost("/notes", async (Note input) =>
 
 app.Run();
 
+bool IsValid(Note note)
+{
+    return !string.IsNullOrWhiteSpace(note.Title)
+           && !string.IsNullOrWhiteSpace(note.Body);
+}
+
 record Note(long Id, string Title, string Body, string CreatedUtc);
 
-/*
-
-// in-memory db
-var texts = new List<MyText>()
-{
-    new MyText("Terje")
-};
-
-app.MapGet("/text", () =>
-{
-    return texts;
-});
-
-app.MapPost("/text", (MyText myText) =>
-{
-    texts.Add(myText);
-});
-
-app.Run();
-
-record MyText(string text);
-*/

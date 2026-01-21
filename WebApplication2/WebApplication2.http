@@ -1,0 +1,17 @@
+@WebApplication2_HostAddress = http://localhost:5225
+
+GET {{WebApplication2_HostAddress}}/notes
+Accept: application/json
+
+###
+
+POST {{WebApplication2_HostAddress}}/notes
+Accept: application/json
+Content-type: application/json
+
+{
+    "title": "Enda en note",
+    "body": "Ny tekst",
+    "createdUtc": "2026-01-20T12:00:00Z"
+}
+
